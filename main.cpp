@@ -19,6 +19,16 @@ int digitoIndex = 0;
 #define FRECUENCIA_PWM 5000 // 5 kHz
 #define RESOLUCION_PWM 8   // Resolución de 8 bits (0-255)
 
+//configuración PWM para servo 
+//paso2
+#define canalPWM 9
+//paso 3 (Hz)
+#define freqPWM 50
+//paso 4 resolución (bits)
+#define resPWM 12
+#define pinPWM1 21
+
+
 
 // Sensor
 #include <Adafruit_Sensor.h>
@@ -58,8 +68,8 @@ void IRAM_ATTR BTN1_ISR() {
     portEXIT_CRITICAL_ISR(&mux);
 }
 
-// Función para inicializar PWM
-void initPWM() {
+// Función para inicializar PWM boton
+void initPWM2() {
     // Configura el canal PWM para cada color
     ledcSetup(CANALR, FRECUENCIA_PWM, RESOLUCION_PWM);
     ledcSetup(CANALV, FRECUENCIA_PWM, RESOLUCION_PWM);
@@ -70,6 +80,12 @@ void initPWM() {
     ledcAttachPin(LV, CANALV);
     ledcAttachPin(LA, CANALA);
 }
+
+//función para iniciar PWM motor
+
+void initPWM(void);
+
+
 
 // Define el pin donde está conectado el DHT11
 #define DHTPIN 25
@@ -105,6 +121,9 @@ void convertirANumeros(float num) {
 }
 
 void setup() {
+  //PWM motor
+  initPWM2();
+
   configuraDisplay(sA, sB, sC, sD, sE, sF, sG, sP);
   pinMode(DISP1, OUTPUT);
   pinMode(DISP2, OUTPUT);
@@ -118,12 +137,14 @@ void setup() {
   // Configura el pin del botón como entrada con resistencia pull-up
   pinMode(button1.PIN, INPUT_PULLUP);
   attachInterrupt(button1.PIN, BTN1_ISR, FALLING);
-
+ 
+  //PWM led
   initPWM();
 }
 
 void loop() {
   // Activar cada display secuencialmente
+  //
   digitalWrite(DISP1, HIGH);
   desplegarDisplay(digitos[0]);
   desplegarPunto(1);
@@ -141,6 +162,7 @@ void loop() {
   desplegarPunto(1);
   delay(5);
   digitalWrite(DISP3, LOW);
+  //
 
   if (button1.pressed == true) {
     // Lee la temperatura en grados Celsius
@@ -190,5 +212,56 @@ void loop() {
     ledcWrite(CANALV, verde);
     ledcWrite(CANALA, azul);
 
+    //motor 
+    //
+      if (resultado < 20) {
+  
+      // Mover a 0 grados (mínimo PWM)
+        ledcWrite(canalPWM, 205); // Aproximadamente 1 ms
+        delay(1000); // Espera 1 segundo
+
+        // Mover a 90 grados (mitad del rango)
+        ledcWrite(canalPWM, 307); // Aproximadamente 1.5 ms
+        delay(1000); // Espera 1 segundo
+
+        // Regresar a 0 grados
+        ledcWrite(canalPWM, 205);
+        delay(1000); // Espera 1 segundo
+
+  }else if (resultado >= 20 && resultado <= 30){
+        // Mover a 0 grados (mínimo PWM)
+        ledcWrite(canalPWM, 205); // Aproximadamente 1 ms
+        delay(1000); // Espera 1 segundo
+
+        // Mover a 180 grados (máximo PWM)
+        ledcWrite(canalPWM, 409); // Aproximadamente 2 ms
+        delay(1000); // Espera 1 segundo
+
+        // Regresar a 0 grados
+        ledcWrite(canalPWM, 205);
+        delay(1000); // Espera 1 segundo
+  
+  }else{
+        for(int i=0; i<500; i++){
+          ledcWrite(canalPWM,i);
+          delay(5);
+        }
+
+  }
+
+  //
+
     
+}
+
+
+void initPWM(void){
+  //PASO 4
+    ledcSetup(canalPWM, freqPWM, resPWM);
+
+  //PASO5 5
+    ledcAttachPin(pinPWM1,canalPWM);
+
+  //paso 6
+    ledcWrite(canalPWM,0);
 }
