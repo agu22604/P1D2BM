@@ -1,0 +1,351 @@
+#include <Arduino.h>
+#include "display7seg.h"
+#include <stdint.h>
+#include <driver/ledc.h>
+#include "config.h"
+
+// Arreglo para almacenar los dígitos
+int digitos[4] = {0, 0, 0, 0};  // Array para almacenar los dígitos
+int digitoIndex = 0;
+
+
+// Configuración de pines PWM para el LED RGB
+#define LR 4
+#define LV 2
+#define LA 15
+// Configuración PWM
+#define CANALR 0
+#define CANALV 1
+#define CANALA 2
+#define FRECUENCIA_PWM 5000 // 5 kHz
+#define RESOLUCION_PWM 8   // Resolución de 8 bits (0-255)
+
+//configuración PWM para servo 
+//paso2
+#define canalPWM 9
+//paso 3 (Hz)
+#define freqPWM 50
+//paso 4 resolución (bits)
+#define resPWM 12
+#define pinPWM1 21
+
+
+
+// Sensor
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
+
+#define DISP1 18
+#define DISP2 5
+#define DISP3 19
+
+#define sA 21
+#define sB 23
+#define sC 14
+#define sD 12
+#define sE 13
+#define sF 22
+#define sG 27
+#define sP 26
+
+// Botón
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+struct Button {
+    const uint8_t PIN;
+    volatile uint32_t numberKeyPresses;
+    bool pressed;
+};
+
+Button button1 = {33, 0, false};
+float resultado;
+
+// Interrupción del botón
+void IRAM_ATTR BTN1_ISR() {
+    portENTER_CRITICAL_ISR(&mux);
+    button1.numberKeyPresses++;
+    button1.pressed = true;
+    portEXIT_CRITICAL_ISR(&mux);
+}
+
+// Función para inicializar PWM boton
+void initPWM2() {
+    // Configura el canal PWM para cada color
+    ledcSetup(CANALR, FRECUENCIA_PWM, RESOLUCION_PWM);
+    ledcSetup(CANALV, FRECUENCIA_PWM, RESOLUCION_PWM);
+    ledcSetup(CANALA, FRECUENCIA_PWM, RESOLUCION_PWM);
+
+    // Asocia los pines de los LEDs a los canales PWM
+    ledcAttachPin(LR, CANALR);
+    ledcAttachPin(LV, CANALV);
+    ledcAttachPin(LA, CANALA);
+}
+
+//función para iniciar PWM motor
+
+void initPWM(void);
+
+
+
+// Define el pin donde está conectado el DHT11
+#define DHTPIN 25
+
+// Define el tipo de sensor que estás usando
+#define DHTTYPE DHT11
+
+// Inicializa el sensor DHT
+DHT dht(DHTPIN, DHTTYPE);
+
+// Función para convertir el número a un array de dígitos
+void convertirANumeros(float num) {
+  String numStr = String(num, 2); // 2 dígitos decimales
+  
+  // Limpiar el array de dígitos antes de llenarlo nuevamente
+  for (int i = 0; i < 4; i++) {
+    digitos[i] = 0;
+  }
+  
+  digitoIndex = 0; // Reiniciar el índice
+
+  // Recorrer cada carácter de la cadena
+  for (int i = 0; i < numStr.length(); i++) {
+    char c = numStr.charAt(i);  // Obtener el carácter en la posición i
+    
+    if (c >= '0' && c <= '9') {
+      digitos[digitoIndex++] = c - '0';  // Convertir el carácter a entero y almacenarlo en el array
+    } else if (c == '.') {
+      // Aquí puedes manejar el punto decimal según cómo deseas representarlo
+      
+    }
+  }
+}
+
+//adafruit
+#define pinLed 34
+void handleMessage(AdafruitIO_Data *data);
+float Temperatura = 0;
+bool estado= false;
+
+// set up the 'Temperatura' feed
+AdafruitIO_Feed *tempCanal = io.feed("Temperatura");
+
+// set up the 'Led' feed
+AdafruitIO_Feed *ledCanal = io.feed("canalLed");
+
+void setup() {
+  //PWM motor
+  initPWM2();
+
+  configuraDisplay(sA, sB, sC, sD, sE, sF, sG, sP);
+  pinMode(DISP1, OUTPUT);
+  pinMode(DISP2, OUTPUT);
+  pinMode(DISP3, OUTPUT);
+
+  // Inicia la comunicación serie
+  Serial.begin(115200);
+  // Inicia el sensor DHT
+  dht.begin();
+
+  // Configura el pin del botón como entrada con resistencia pull-up
+  pinMode(button1.PIN, INPUT_PULLUP);
+  attachInterrupt(button1.PIN, BTN1_ISR, FALLING);
+ 
+  //PWM led
+  initPWM();
+
+  //adafruit
+   // start the serial connection
+  Serial.begin(115200);
+
+  pinMode(pinLed, OUTPUT);
+  digitalWrite(pinLed,LOW);
+  // wait for serial monitor to open
+  while(! Serial);
+
+  Serial.print("Connecting to Adafruit IO");
+
+  // connect to io.adafruit.com
+  io.connect();
+
+    // set up a message handler for the count feed.
+  // the handleMessage function (defined below)
+  // will be called whenever a message is
+  // received from adafruit io.
+  ledCanal->onMessage(handleMessage);
+
+  // wait for a connection
+  while(io.status() < AIO_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+
+ // Because Adafruit IO doesn't support the MQTT retain flag, we can use the
+  // get() function to ask IO to resend the last value for this feed to just
+  // this MQTT client after the io client is connected.
+  ledCanal->get();
+
+
+  // we are connected
+  Serial.println();
+  Serial.println(io.statusText());
+  estado=false;
+}
+
+void loop() {
+  // Activar cada display secuencialmente
+  /*
+  digitalWrite(DISP1, HIGH);
+  desplegarDisplay(digitos[0]);
+  desplegarPunto(1);
+  delay(5);
+  digitalWrite(DISP1, LOW);
+
+  digitalWrite(DISP2, HIGH);
+  desplegarDisplay(digitos[1]);
+  desplegarPunto(0);
+  delay(5);
+  digitalWrite(DISP2, LOW);
+
+  digitalWrite(DISP3, HIGH);
+  desplegarDisplay(digitos[2]);
+  desplegarPunto(1);
+  delay(5);
+  digitalWrite(DISP3, LOW);
+  */
+
+  if (button1.pressed == true) {
+    // Lee la temperatura en grados Celsius
+    float temperatura = dht.readTemperature();
+
+    // Verifica si las lecturas fallaron
+    if (isnan(temperatura)) {
+      Serial.println("Error al leer el sensor DHT11");
+      return;
+    }
+
+    // Actualiza el valor de la temperatura
+    resultado = temperatura;
+
+    // Convierte la temperatura a dígitos para el display
+    convertirANumeros(resultado);
+
+    // Restablece el estado del botón
+    button1.pressed = false;
+  }
+
+  Serial.print("Temperatura almacenada: ");
+  Serial.println(resultado);
+
+  // Ajusta el color según la temperatura
+    uint8_t rojo, verde, azul;
+
+    if (resultado < 20) {
+        // Frío: Azul
+        rojo = 0;
+        verde = 0;
+        azul = 255;
+    } else if (resultado >= 20 && resultado < 30) {
+        // Templado: Verde
+        rojo = 0;
+        verde = 255;
+        azul = 0;
+    } else {
+        // Caliente: Rojo
+        rojo = 255;
+        verde = 0;
+        azul = 0;
+    }
+
+    // Ajusta el PWM para cada color
+    ledcWrite(CANALR, rojo);
+    ledcWrite(CANALV, verde);
+    ledcWrite(CANALA, azul);
+
+    //motor 
+    /*
+      if (resultado < 20) {
+  
+      // Mover a 0 grados (mínimo PWM)
+        ledcWrite(canalPWM, 205); // Aproximadamente 1 ms
+        delay(1000); // Espera 1 segundo
+
+        // Mover a 90 grados (mitad del rango)
+        ledcWrite(canalPWM, 307); // Aproximadamente 1.5 ms
+        delay(1000); // Espera 1 segundo
+
+        // Regresar a 0 grados
+        ledcWrite(canalPWM, 205);
+        delay(1000); // Espera 1 segundo
+
+  }else if (resultado >= 20 && resultado <= 30){
+        // Mover a 0 grados (mínimo PWM)
+        ledcWrite(canalPWM, 205); // Aproximadamente 1 ms
+        delay(1000); // Espera 1 segundo
+
+        // Mover a 180 grados (máximo PWM)
+        ledcWrite(canalPWM, 409); // Aproximadamente 2 ms
+        delay(1000); // Espera 1 segundo
+
+        // Regresar a 0 grados
+        ledcWrite(canalPWM, 205);
+        delay(1000); // Espera 1 segundo
+  
+  }else{
+        for(int i=0; i<500; i++){
+          ledcWrite(canalPWM,i);
+          delay(5);
+        }
+
+  }
+  */
+
+  //adafruit
+  io.run();
+
+  Temperatura=random(0,100);
+
+  // save count to the 'counter' feed on Adafruit IO
+  Serial.print("sending -> ");
+  Serial.println(resultado);
+  tempCanal->save(resultado);
+
+  if(estado== true){
+    digitalWrite(pinLed, HIGH);
+  }else{
+     digitalWrite(pinLed, LOW);
+  }
+  // Adafruit IO is rate limited for publishing, so a delay is required in
+  // between feed->save events. In this example, we will wait three seconds
+  // (1000 milliseconds == 1 second) during each loop.
+   delay(3000);
+
+
+    
+}
+
+
+void initPWM(void){
+  //PASO 4
+    ledcSetup(canalPWM, freqPWM, resPWM);
+
+  //PASO5 5
+    ledcAttachPin(pinPWM1,canalPWM);
+
+  //paso 6
+    ledcWrite(canalPWM,0);
+}
+
+// the counter feed in the setup() function above.
+void handleMessage(AdafruitIO_Data *data) {
+
+  Serial.print("received <- ");
+  Serial.println(data->value());
+
+  if(*data->value() == '1'){
+    estado=true;
+  }else{
+    estado=false;
+  }
+
+}
